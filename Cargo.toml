@@ -1,0 +1,14 @@
+[package]
+name = "boofind"
+version = "0.1.0"
+edition = "2021"
+authors = ["jane <jjt1525@outlook.com>"]
+description = "search and download books in terminal"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+crossterm = "0.27.0"
+ratatui = { version = "0.23.0", features = ["all-widgets"] }
+threadpool = "1.8.1"
