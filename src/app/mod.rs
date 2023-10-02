@@ -2,24 +2,26 @@ use std::sync::mpsc::{channel, Receiver};
 
 use anyhow::{Context, Result};
 use crossterm::event::{Event, KeyCode};
+use ratatui::layout::{Constraint, Direction, Layout};
+use tui_textarea::{Input, Key};
 
 use crate::backend::{Backend, Message};
-use crate::layout::Root;
+use crate::layout::{books, footer};
 use crate::term::Term;
 pub use state::{Book, Mode, State};
 
 mod state;
 
-pub struct App {
+pub struct App<'a> {
     term: Term,
     should_quit: bool,
     backend: Backend,
     task: Receiver<Message>,
-    state: State,
+    state: State<'a>,
     event: Receiver<Event>,
 }
 
-impl App {
+impl<'a> App<'a> {
     pub fn new() -> Result<Self> {
         let term = Term::new().context("new Term failed")?;
         let (task_sender, task_receiver) = channel();
@@ -39,11 +41,10 @@ impl App {
 
     pub fn run(mut self) -> Result<()> {
         while !self.should_quit {
-            self.event();
+            self.event()?;
             self.update();
             self.draw()?;
         }
-        self.backend.join();
         self.term.restore().context("restore terminal failed")?;
 
         Ok(())
@@ -56,67 +57,86 @@ impl App {
                     self.state.books_mut().clear();
                     self.state.books_mut().extend(books);
                 }
+                Message::Error(e) => {
+                    self.state.set_key(&e);
+                }
             }
         }
     }
 
-    fn event(&mut self) {
-        if let Ok(Event::Key(key)) = self.event.try_recv() {
+    fn event(&mut self) -> Result<()> {
+        if let Ok(key) = self.event.try_recv() {
             match self.state.mode() {
-                Mode::Normal => match key.code {
-                    KeyCode::Enter => *self.state.mode_mut() = Mode::Search,
-                    KeyCode::Char('q') => self.should_quit = true,
-                    _ => (),
-                },
-                Mode::Search => match key.code {
-                    KeyCode::Enter => {
-                        let search = self.state.search().to_string();
-                        self.state.key_mut().clear();
-                        self.state.key_mut().push_str(&search);
-                        self.backend.get_book(search);
-                        self.state.search_mut().clear();
-                        *self.state.search_cursor_mut() = 2;
-                    }
-                    KeyCode::Esc => *self.state.mode_mut() = Mode::Normal,
-                    KeyCode::Backspace => {
-                        if !self.state.search().is_empty() {
-                            let pos = *self.state.search_cursor();
-                            if pos > 2 {
-                                *self.state.search_cursor_mut() = pos.saturating_sub(1);
+                Mode::Normal => {
+                    if let Event::Key(key) = key {
+                        match key.code {
+                            KeyCode::Enter => *self.state.mode_mut() = Mode::Search,
+                            KeyCode::Char('q') => self.should_quit = true,
+                            KeyCode::Char('j') => self.state.select_next(),
+                            KeyCode::Char('k') => self.state.select_prev(),
+                            KeyCode::Char('o') => {
+                                if let Some(selected) = self.state.selected_book().selected() {
+                                    let url = self.state.books()[selected].url();
+                                    open::that(url)
+                                        .with_context(|| format!("open url [{}] failed", url))?;
+                                }
                             }
-                            self.state.search_mut().remove(pos - 3);
+                            _ => (),
                         }
                     }
-                    KeyCode::Left => {
-                        let pos = *self.state.search_cursor();
-                        if pos > 2 {
-                            *self.state.search_cursor_mut() = pos.saturating_sub(1);
-                        }
+                }
+                Mode::Search => match key.into() {
+                    Input {
+                        key: Key::Enter,
+                        ctrl: false,
+                        alt: false,
+                    } => {
+                        self.state.reset_and_update();
+
+                        let key = self.state.key();
+                        self.backend.get_book(key);
                     }
-                    KeyCode::Right => {
-                        let pos = *self.state.search_cursor();
-                        if pos < self.state.search().len() + 2 {
-                            *self.state.search_cursor_mut() = pos.saturating_add(1);
-                        }
+                    Input {
+                        key: Key::Esc,
+                        ctrl: false,
+                        alt: false,
+                    } => *self.state.mode_mut() = Mode::Normal,
+                    input => {
+                        self.state.input(input);
                     }
-                    KeyCode::Char(c) => {
-                        self.state.search_mut().push(c);
-                        let pos = self.state.search_cursor();
-                        *self.state.search_cursor_mut() = pos.saturating_add(1);
-                    }
-                    _ => {}
                 },
             }
         }
+
+        Ok(())
     }
 
     fn draw(&mut self) -> Result<()> {
         self.term.terminal_mut().draw(|frame| {
-            frame.render_widget(Root::new(&self.state), frame.size());
             match self.state.mode() {
                 Mode::Normal => (),
-                Mode::Search => frame.set_cursor(*self.state.search_cursor() as u16, 1),
-            }
+                Mode::Search => {
+                    if self.state.search().is_empty() {
+                        frame.set_cursor(2, 1);
+                    }
+                }
+            };
+            let area = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                    Constraint::Length(1),
+                    Constraint::Length(1),
+                ])
+                .split(frame.size());
+
+            let input = self.state.search().widget();
+            let books = books::Books::new(&self.state).widget();
+            let footer = footer::Footer::new(&self.state);
+            frame.render_widget(input, area[0]);
+            frame.render_stateful_widget(books, area[1], &mut self.state.selected_book());
+            frame.render_widget(footer, area[2]);
         })?;
 
         Ok(())

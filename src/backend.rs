@@ -2,16 +2,17 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use crossterm::event::{self, Event};
-use ratatui::widgets::{List, ListItem, ListState};
 use reqwest::blocking::Client;
+use scraper::{Html, Selector};
 use threadpool::ThreadPool;
 
 use crate::app::Book;
 
 pub enum Message {
     Book(Vec<Book>),
+    Error(String),
 }
 
 pub struct Backend {
@@ -26,11 +27,16 @@ impl Backend {
     pub fn new(task_sender: Sender<Message>, event_sender: Sender<Event>) -> Result<Self> {
         let threadpool = ThreadPool::new(Self::MAX_WORKER);
         {
+            let task_sender = task_sender.clone();
             thread::spawn(move || loop {
                 if let Ok(has_event) = event::poll(Duration::from_millis(250)) {
                     if has_event {
                         if let Ok(event) = event::read() {
-                            event_sender.send(event).unwrap();
+                            if let Err(e) = event_sender.send(event) {
+                                if let Err(e) = task_sender.send(Message::Error(e.to_string())) {
+                                    eprintln!("{:?}", e);
+                                }
+                            }
                         }
                     }
                 }
@@ -44,29 +50,63 @@ impl Backend {
         Ok(Self {
             threadpool,
             sender: task_sender,
-            base_url: "",
+            base_url: "https://www.soushu.vip",
             client,
         })
     }
 
-    pub fn join(self) {
-        self.threadpool.join();
+    pub fn get_book(&self, name: impl Into<String>) {
+        let sender = self.sender.clone();
+        let base_url = self.base_url;
+        let url = format!("{}/operate/search/{}", base_url, name.into());
+        let client = self.client.clone();
+        self.threadpool.execute(move || {
+            if let Err(e) = Self::send_book(sender.clone(), url, client, base_url) {
+                if let Err(e) = sender.send(Message::Error(e.to_string())) {
+                    eprintln!("{:?}", e);
+                }
+            }
+        })
     }
 
-    pub fn get_book(&self, _: impl Into<String>) {
-        let sender = self.sender.clone();
-        self.threadpool.execute(move || {
-            thread::sleep(Duration::from_secs(2));
-            sender
-                .send(Message::Book(vec![
-                    Book::new("hello1", "url"),
-                    Book::new("hello2", "url"),
-                    Book::new("hello1", "url"),
-                    Book::new("hello2", "url"),
-                    Book::new("hello1", "url"),
-                    Book::new("hello2", "url"),
-                ]))
-                .unwrap();
-        })
+    fn send_book(
+        sender: Sender<Message>,
+        url: impl Into<String>,
+        client: Client,
+        base_url: impl Into<String>,
+    ) -> Result<()> {
+        let html = client
+            .get(url.into())
+            .send()
+            .context("send request failed")?
+            .text()
+            .context("get response text failed")?;
+        let doc = Html::parse_document(&html);
+        let mut books = Vec::new();
+        let base_url = base_url.into();
+        let Ok(selector) = Selector::parse("li.list-group-item h5 a") else {
+            return Err(anyhow!("parse selector failed"));
+        };
+        for book in doc.select(&selector) {
+            let Some(url) = book.value().attr("href") else {
+                continue;
+            };
+            let url = format!("{}{}", base_url, url);
+            let name = book.inner_html();
+
+            books.push(Book::new(name.trim(), url));
+        }
+
+        sender
+            .send(Message::Book(books))
+            .context("send message failed")?;
+
+        Ok(())
+    }
+}
+
+impl Drop for Backend {
+    fn drop(&mut self) {
+        self.threadpool.join();
     }
 }

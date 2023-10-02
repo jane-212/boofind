@@ -1,35 +1,33 @@
-use ratatui::layout::Alignment;
+use ratatui::style::{Color, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget};
+use ratatui::widgets::{Block, BorderType, Borders, List, ListItem};
 
 use crate::app::State;
 
 pub struct Books<'a> {
-    state: &'a State,
+    state: &'a State<'a>,
 }
 
 impl<'a> Books<'a> {
     pub fn new(state: &'a State) -> Self {
         Self { state }
     }
-}
 
-impl<'a> Widget for Books<'a> {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
+    pub fn widget(self) -> List<'a> {
         let block = Block::new()
             .title("books")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded);
-        let text = self
+
+        let items = self
             .state
             .books()
             .iter()
-            .map(|book| Line::from(format!("name: {}", book.name())))
-            .collect::<Vec<Line>>();
+            .map(|book| ListItem::new(Line::from(format!(" {} ", book.name()))))
+            .collect::<Vec<ListItem>>();
 
-        Paragraph::new(text)
+        List::new(items)
+            .highlight_style(Style::new().fg(Color::Black).bg(Color::White))
             .block(block)
-            .alignment(Alignment::Center)
-            .render(area, buf);
     }
 }

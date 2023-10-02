@@ -10,7 +10,9 @@ description = "search and download books in terminal"
 [dependencies]
 anyhow = "1.0.75"
 crossterm = "0.27.0"
+open = "5.0.0"
 ratatui = { version = "0.23.0", features = ["all-widgets"] }
 reqwest = { version = "0.11.20", features = ["blocking"] }
 scraper = "0.17.1"
 threadpool = "1.8.1"
+tui-textarea = { version = "0.2.2", features = ["ratatui-crossterm"], default-features = false }

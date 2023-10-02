@@ -18,7 +18,7 @@ impl Term {
 
         Ok(Self { terminal })
     }
-    
+
     pub fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<Stdout>> {
         &mut self.terminal
     }
@@ -37,7 +37,9 @@ impl Term {
         disable_raw_mode().context("failed to disable raw mode")?;
         execute!(self.terminal.backend_mut(), LeaveAlternateScreen)
             .context("unable to switch to main screen")?;
-        self.terminal.show_cursor().context("unable to show cursor")?;
+        self.terminal
+            .show_cursor()
+            .context("unable to show cursor")?;
 
         Ok(())
     }
