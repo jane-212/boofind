@@ -11,8 +11,8 @@ use threadpool::ThreadPool;
 use crate::app::Book;
 
 pub enum Message {
-    Book(Vec<Book>),
-    Error(String),
+    Book((String, Vec<Book>)),
+    Key(String),
 }
 
 pub struct Backend {
@@ -33,7 +33,7 @@ impl Backend {
                     if has_event {
                         if let Ok(event) = event::read() {
                             if let Err(e) = event_sender.send(event) {
-                                if let Err(e) = task_sender.send(Message::Error(e.to_string())) {
+                                if let Err(e) = task_sender.send(Message::Key(e.to_string())) {
                                     eprintln!("{:?}", e);
                                 }
                             }
@@ -58,11 +58,12 @@ impl Backend {
     pub fn get_book(&self, name: impl Into<String>) {
         let sender = self.sender.clone();
         let base_url = self.base_url;
-        let url = format!("{}/operate/search/{}", base_url, name.into());
+        let name = name.into();
+        let url = format!("{}/operate/search/{}", base_url, name);
         let client = self.client.clone();
         self.threadpool.execute(move || {
-            if let Err(e) = Self::send_book(sender.clone(), url, client, base_url) {
-                if let Err(e) = sender.send(Message::Error(e.to_string())) {
+            if let Err(e) = Self::send_book(sender.clone(), url, client, base_url, name) {
+                if let Err(e) = sender.send(Message::Key(e.to_string())) {
                     eprintln!("{:?}", e);
                 }
             }
@@ -74,7 +75,9 @@ impl Backend {
         url: impl Into<String>,
         client: Client,
         base_url: impl Into<String>,
+        name: impl Into<String>,
     ) -> Result<()> {
+        sender.send(Message::Key("loading...".into()))?;
         let html = client
             .get(url.into())
             .send()
@@ -98,7 +101,7 @@ impl Backend {
         }
 
         sender
-            .send(Message::Book(books))
+            .send(Message::Book((name.into(), books)))
             .context("send message failed")?;
 
         Ok(())

@@ -53,12 +53,14 @@ impl<'a> App<'a> {
     fn update(&mut self) {
         if let Ok(message) = self.task.try_recv() {
             match message {
-                Message::Book(books) => {
+                Message::Book((name, books)) => {
                     self.state.books_mut().clear();
                     self.state.books_mut().extend(books);
+                    self.state.reset();
+                    self.state.set_key(name);
                 }
-                Message::Error(e) => {
-                    self.state.set_key(&e);
+                Message::Key(key) => {
+                    self.state.set_key(&key);
                 }
             }
         }
@@ -91,10 +93,8 @@ impl<'a> App<'a> {
                         ctrl: false,
                         alt: false,
                     } => {
-                        self.state.reset_and_update();
-
-                        let key = self.state.key();
-                        self.backend.get_book(key);
+                        let search = self.state.reset_search();
+                        self.backend.get_book(search);
                     }
                     Input {
                         key: Key::Esc,

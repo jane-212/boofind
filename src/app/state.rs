@@ -72,6 +72,10 @@ impl<'a> State<'a> {
         self.selected_book.clone()
     }
 
+    pub fn reset(&mut self) {
+        self.selected_book.select(None);
+    }
+
     pub fn select_prev(&mut self) {
         let i = match self.selected_book.selected() {
             Some(i) => {
@@ -100,10 +104,12 @@ impl<'a> State<'a> {
         self.selected_book.select(Some(i));
     }
 
-    pub fn reset_and_update(&mut self) {
-        self.key = self.search.lines()[0].clone();
+    pub fn reset_search(&mut self) -> String {
+        let search = self.search.lines()[0].clone();
         self.search.move_cursor(CursorMove::End);
         self.search.delete_line_by_head();
+
+        search
     }
 
     pub fn input(&mut self, input: Input) {
