@@ -6,12 +6,10 @@ mod backend;
 mod layout;
 mod term;
 
-fn main() -> Result<()> {
+fn main() {
     if let Err(e) = run() {
         eprintln!("{:?}", e);
     }
-
-    Ok(())
 }
 
 fn run() -> Result<()> {

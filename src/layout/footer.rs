@@ -20,12 +20,14 @@ impl<'a> Widget for Footer<'a> {
             Mode::Normal => " Normal ".bg(Color::Green),
             Mode::Search => " Search ".bg(Color::Yellow),
         };
+
         let key = self.state.key();
         let key = if key.is_empty() {
             " <empty> ".into()
         } else {
             format!(" {} ", key)
         };
+
         let text = vec![mode.fg(Color::Black), key.fg(Color::Black).bg(Color::White)];
         let block = Block::new()
             .padding(Padding::horizontal(1))
