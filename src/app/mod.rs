@@ -1,7 +1,7 @@
 use std::sync::mpsc::{channel, Receiver};
 
 use anyhow::{Context, Result};
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
 use tui_textarea::{Input, Key};
 
@@ -69,24 +69,50 @@ impl<'a> App<'a> {
     fn event(&mut self) -> Result<()> {
         if let Ok(key) = self.event.try_recv() {
             match self.state.mode() {
-                Mode::Normal => {
-                    if let Event::Key(key) = key {
-                        match key.code {
-                            KeyCode::Enter => *self.state.mode_mut() = Mode::Search,
-                            KeyCode::Char('q') => self.should_quit = true,
-                            KeyCode::Char('j') => self.state.select_next(),
-                            KeyCode::Char('k') => self.state.select_prev(),
-                            KeyCode::Char('o') => {
-                                if let Some(selected) = self.state.selected_book().selected() {
-                                    let url = self.state.books()[selected].url();
-                                    open::that(url)
-                                        .with_context(|| format!("open url [{}] failed", url))?;
-                                }
-                            }
-                            _ => (),
+                Mode::Normal => match key {
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Enter,
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => *self.state.mode_mut() = Mode::Search,
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('q'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => self.should_quit = true,
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('j'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => self.state.select_next(1),
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('J'),
+                        modifiers: KeyModifiers::SHIFT,
+                        ..
+                    }) => self.state.select_next(5),
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('k'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => self.state.select_prev(1),
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('K'),
+                        modifiers: KeyModifiers::SHIFT,
+                        ..
+                    }) => self.state.select_prev(5),
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('o'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => {
+                        if let Some(selected) = self.state.selected_book().selected() {
+                            let url = self.state.books()[selected].url();
+                            open::that(url)
+                                .with_context(|| format!("open url [{}] failed", url))?;
                         }
                     }
-                }
+                    _ => (),
+                },
                 Mode::Search => match key.into() {
                     Input {
                         key: Key::Enter,

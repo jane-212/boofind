@@ -76,13 +76,13 @@ impl<'a> State<'a> {
         self.selected_book.select(None);
     }
 
-    pub fn select_prev(&mut self) {
+    pub fn select_prev(&mut self, count: usize) {
         let i = match self.selected_book.selected() {
             Some(i) => {
-                if i == 0 {
+                if i < count {
                     self.books.len() - 1
                 } else {
-                    i - 1
+                    i - count
                 }
             }
             None => 0,
@@ -90,13 +90,13 @@ impl<'a> State<'a> {
         self.selected_book.select(Some(i));
     }
 
-    pub fn select_next(&mut self) {
+    pub fn select_next(&mut self, count: usize) {
         let i = match self.selected_book.selected() {
             Some(i) => {
-                if i >= self.books.len() - 1 {
+                if i + count > self.books.len() - 1 {
                     0
                 } else {
-                    i + 1
+                    i + count
                 }
             }
             None => 0,
