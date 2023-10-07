@@ -124,18 +124,15 @@ impl Backend {
             let Some(cat) = article.select(&selector).next() else {
                 continue;
             };
-            let Some(url) = cat.value().attr("href") else {
-                continue;
-            };
             let tag = cat.inner_html();
 
             let selector = Selector::parse("header.entry-header h2.entry-title a")
                 .map_err(|_| anyhow!("parse selector failed"))?;
-            let Some(name) = article
-                .select(&selector)
-                .next()
-                .map(|name| name.inner_html())
-            else {
+            let Some(a) = article.select(&selector).next() else {
+                continue;
+            };
+            let name = a.inner_html();
+            let Some(url) = a.value().attr("href") else {
                 continue;
             };
 
