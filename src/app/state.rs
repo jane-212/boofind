@@ -9,15 +9,17 @@ pub enum Mode {
 }
 
 pub struct Book {
+    tag: String,
     name: String,
     url: String,
 }
 
 impl Book {
-    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>, url: impl Into<String>, tag: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             url: url.into(),
+            tag: tag.into(),
         }
     }
 
@@ -27,6 +29,10 @@ impl Book {
 
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    pub fn tag(&self) -> &str {
+        &self.tag
     }
 }
 

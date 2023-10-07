@@ -4,9 +4,11 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use crossterm::event::{self, Event};
+use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case, take_till};
 use nom::combinator::{map, opt};
-use nom::sequence::separated_pair;
+use nom::multi::many0;
+use nom::sequence::{separated_pair, tuple};
 use nom::IResult;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
@@ -15,7 +17,8 @@ use threadpool::ThreadPool;
 use crate::app::Book;
 
 pub enum Message {
-    Book((String, Vec<Book>)),
+    Book(Vec<Book>),
+    More(Vec<Book>),
     Key(String),
 }
 
@@ -54,17 +57,35 @@ impl Backend {
         Ok(Self {
             threadpool,
             sender: task_sender,
-            base_url: "https://www.soushu.vip",
+            base_url: "https://www.iyd.wang",
             client,
         })
     }
 
-    fn filter(input: &str) -> IResult<&str, (&str, &str)> {
-        separated_pair(tag_no_case("filter"), tag(":"), take_till(|c| c == ' '))(input)
+    fn alt(input: &str) -> IResult<&str, (&str, &str)> {
+        alt((
+            separated_pair(tag_no_case("filter"), tag(":"), take_till(|c| c == ' ')),
+            separated_pair(tag_no_case("tag"), tag(":"), take_till(|c| c == ' ')),
+        ))(input)
     }
 
-    fn parse_name(input: &str) -> IResult<&str, Option<(&str, &str)>> {
-        map(opt(Self::filter), |filter| filter.map(|a| (a.0, a.1)))(input)
+    fn filter(input: &str) -> IResult<&str, Vec<Option<(&str, &str)>>> {
+        map(
+            tuple((
+                many0(tag(" ")),
+                opt(Self::alt),
+                many0(tag(" ")),
+                opt(Self::alt),
+            )),
+            |filter| vec![filter.1, filter.3],
+        )(input)
+    }
+
+    fn parse_name(input: &str) -> Result<(Vec<(&str, &str)>, &str)> {
+        let (name, filters) = Self::filter(input).map_err(|_| anyhow!("parse filter failed"))?;
+        let filters = filters.into_iter().flatten().collect();
+
+        Ok((filters, name))
     }
 
     pub fn get_book(&self, name: impl Into<String>) {
@@ -81,6 +102,61 @@ impl Backend {
         })
     }
 
+    fn parse_books(
+        client: Client,
+        url: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Result<Vec<Book>> {
+        let Ok(html) = client.get(url.into()).query(&[("s", name.into())]).send() else {
+            return Ok(Vec::new());
+        };
+
+        let html = html
+            .text()
+            .map_err(|_| anyhow!("get response text failed"))?;
+        let doc = Html::parse_document(&html);
+        let mut books = Vec::new();
+        let selector =
+            Selector::parse("main#main article").map_err(|_| anyhow!("parse selector failed"))?;
+        for article in doc.select(&selector) {
+            let selector = Selector::parse("figure.thumbnail span.cat a")
+                .map_err(|_| anyhow!("parse selector failed"))?;
+            let Some(cat) = article.select(&selector).next() else {
+                continue;
+            };
+            let Some(url) = cat.value().attr("href") else {
+                continue;
+            };
+            let tag = cat.inner_html();
+
+            let selector = Selector::parse("header.entry-header h2.entry-title a")
+                .map_err(|_| anyhow!("parse selector failed"))?;
+            let Some(name) = article
+                .select(&selector)
+                .next()
+                .map(|name| name.inner_html())
+            else {
+                continue;
+            };
+
+            books.push(Book::new(name, url, tag));
+        }
+
+        Ok(books)
+    }
+
+    fn filter_books(mut books: Vec<Book>, filters: Vec<(&str, &str)>) -> Result<Vec<Book>> {
+        for filter in filters {
+            match filter.0 {
+                "filter" => books.retain(|book| book.name().to_lowercase().contains(filter.1)),
+                "tag" => books.retain(|book| book.tag().to_lowercase().contains(filter.1)),
+                _ => (),
+            }
+        }
+
+        Ok(books)
+    }
+
     fn send_book(
         sender: Sender<Message>,
         client: Client,
@@ -90,42 +166,30 @@ impl Backend {
         sender.send(Message::Key("loading...".into()))?;
 
         let input = name.into();
-        let (name, filter) = Self::parse_name(&input).map_err(|_| anyhow!("parse name failed"))?;
+        let (filters, name) = Self::parse_name(&input).map_err(|_| anyhow!("parse name failed"))?;
 
         let base_url = base_url.into();
         let name = name.trim();
-        let url = format!("{}/operate/search/{}", &base_url, name);
 
-        let html = client
-            .get(url)
-            .send()
-            .map_err(|_| anyhow!("send request failed"))?
-            .text()
-            .map_err(|_| anyhow!("get response text failed"))?;
-        let doc = Html::parse_document(&html);
-        let mut books = Vec::new();
-        let Ok(selector) = Selector::parse("li.list-group-item h5 a") else {
-            return Err(anyhow!("parse selector failed"));
-        };
-        for book in doc.select(&selector) {
-            let Some(url) = book.value().attr("href") else {
-                continue;
-            };
-            let url = format!("{}{}", base_url, url);
-            let name = book.inner_html();
-
-            books.push(Book::new(name, url));
-        }
-
-        if let Some((key, filter)) = filter {
-            if key == "filter" {
-                books.retain(|book| book.name().to_lowercase().contains(filter));
+        for i in 0..3 {
+            let books =
+                Self::parse_books(client.clone(), format!("{}/page/{}", base_url, i), name)?;
+            if books.is_empty() {
+                break;
             }
+            let books = Self::filter_books(books, filters.clone())?;
+
+            let message = if i == 0 {
+                Message::Book(books)
+            } else {
+                Message::More(books)
+            };
+            sender
+                .send(message)
+                .map_err(|_| anyhow!("send message failed"))?;
         }
 
-        sender
-            .send(Message::Book((name.to_string(), books)))
-            .map_err(|_| anyhow!("send message failed"))?;
+        sender.send(Message::Key(name.into()))?;
 
         Ok(())
     }

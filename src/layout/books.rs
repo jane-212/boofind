@@ -1,6 +1,6 @@
 use ratatui::style::{Color, Style};
-use ratatui::text::Line;
-use ratatui::widgets::{Block, BorderType, Borders, List, ListItem};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, Padding};
 
 use crate::app::State;
 
@@ -17,13 +17,19 @@ impl<'a> Books<'a> {
         let block = Block::new()
             .title("books")
             .borders(Borders::ALL)
+            .padding(Padding::horizontal(1))
             .border_type(BorderType::Rounded);
 
         let items = self
             .state
             .books()
             .iter()
-            .map(|book| ListItem::new(Line::from(format!(" {} ", book.name()))))
+            .map(|book| {
+                ListItem::new(Line::from(vec![
+                    Span::from(format!("[{}]", book.tag())),
+                    Span::from(book.name()),
+                ]))
+            })
             .collect::<Vec<ListItem>>();
 
         List::new(items)
