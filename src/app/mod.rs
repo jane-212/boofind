@@ -3,10 +3,11 @@ use std::sync::mpsc::{channel, Receiver};
 use anyhow::{Context, Result};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Color, Style};
 use tui_textarea::{Input, Key};
 
 use crate::backend::{Backend, KegelState, Message};
-use crate::layout::{books, footer};
+use crate::layout::{books, footer, title};
 use crate::term::Term;
 pub use state::{Book, Mode, State};
 
@@ -167,18 +168,31 @@ impl<'a> App<'a> {
                 .direction(Direction::Vertical)
                 .constraints(vec![
                     Constraint::Length(3),
-                    Constraint::Min(0),
                     Constraint::Length(1),
+                    Constraint::Min(0),
                     Constraint::Length(1),
                 ])
                 .split(frame.size());
 
             let input = self.state.search().widget();
-            let books = books::Books::new(&self.state).widget();
-            let footer = footer::Footer::new(&self.state);
             frame.render_widget(input, area[0]);
-            frame.render_stateful_widget(books, area[1], &mut self.state.selected_book());
-            frame.render_widget(footer, area[2]);
+
+            let title = title::Title::new(&self.state);
+            frame.render_widget(title, area[1]);
+
+            let hint = match self.state.kegel() {
+                KegelState::Process(_, _, _) => Some(Color::Red),
+                KegelState::Relax(_, _, _) => Some(Color::Green),
+                KegelState::End => None,
+            };
+            let mut books = books::Books::new(&self.state).widget();
+            if let Some(color) = hint {
+                books = books.style(Style::new().fg(color).bg(color));
+            }
+            frame.render_stateful_widget(books, area[2], &mut self.state.selected_book());
+
+            let footer = footer::Footer::new(&self.state);
+            frame.render_widget(footer, area[3]);
         })?;
 
         Ok(())

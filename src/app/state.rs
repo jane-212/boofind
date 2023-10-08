@@ -95,6 +95,10 @@ impl<'a> State<'a> {
     }
 
     pub fn select_prev(&mut self, count: usize) {
+        if self.books.is_empty() {
+            return;
+        }
+
         let i = match self.selected_book.selected() {
             Some(i) => {
                 if i < count {
@@ -109,6 +113,10 @@ impl<'a> State<'a> {
     }
 
     pub fn select_next(&mut self, count: usize) {
+        if self.books.is_empty() {
+            return;
+        }
+
         let i = match self.selected_book.selected() {
             Some(i) => {
                 if i + count > self.books.len() - 1 {
