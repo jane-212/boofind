@@ -3,6 +3,8 @@ use ratatui::widgets::{Block, BorderType, Borders, ListState, Padding};
 use tui_textarea::TextArea;
 use tui_textarea::{CursorMove, Input};
 
+use crate::backend::KegelState;
+
 pub enum Mode {
     Normal,
     Search,
@@ -42,6 +44,7 @@ pub struct State<'a> {
     selected_book: ListState,
     mode: Mode,
     key: String,
+    kegel: KegelState,
 }
 
 impl<'a> State<'a> {
@@ -63,7 +66,16 @@ impl<'a> State<'a> {
             selected_book: ListState::default(),
             mode: Mode::Normal,
             key: "".into(),
+            kegel: KegelState::End,
         }
+    }
+
+    pub fn set_kegel(&mut self, keyel: KegelState) {
+        self.kegel = keyel;
+    }
+
+    pub fn kegel(&self) -> &KegelState {
+        &self.kegel
     }
 
     pub fn key(&self) -> &str {

@@ -5,7 +5,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
 use tui_textarea::{Input, Key};
 
-use crate::backend::{Backend, Message};
+use crate::backend::{Backend, KegelState, Message};
 use crate::layout::{books, footer};
 use crate::term::Term;
 pub use state::{Book, Mode, State};
@@ -64,6 +64,9 @@ impl<'a> App<'a> {
                 Message::Key(key) => {
                     self.state.set_key(&key);
                 }
+                Message::Kegel(kegel) => {
+                    self.state.set_kegel(kegel);
+                }
             }
         }
     }
@@ -82,6 +85,15 @@ impl<'a> App<'a> {
                         modifiers: KeyModifiers::NONE,
                         ..
                     }) => self.should_quit = true,
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('g'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => {
+                        if KegelState::End == *self.state.kegel() {
+                            self.backend.kegel();
+                        }
+                    }
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('j'),
                         modifiers: KeyModifiers::NONE,

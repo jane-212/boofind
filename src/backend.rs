@@ -1,5 +1,5 @@
 use std::sync::mpsc::Sender;
-use std::thread;
+use std::thread::{sleep, spawn};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -20,6 +20,14 @@ pub enum Message {
     Book(Vec<Book>),
     More(Vec<Book>),
     Key(String),
+    Kegel(KegelState),
+}
+
+#[derive(PartialEq, Eq)]
+pub enum KegelState {
+    Process((i32, i32), (i32, i32), (i32, i32)),
+    Relax((i32, i32), (i32, i32), (i32, i32)),
+    End,
 }
 
 pub struct Backend {
@@ -35,7 +43,7 @@ impl Backend {
         let threadpool = ThreadPool::new(Self::MAX_WORKER);
         {
             let task_sender = task_sender.clone();
-            thread::spawn(move || loop {
+            spawn(move || loop {
                 if let Ok(has_event) = event::poll(Duration::from_millis(250)) {
                     if has_event {
                         if let Ok(event) = event::read() {
@@ -160,15 +168,16 @@ impl Backend {
         base_url: impl Into<String>,
         name: impl Into<String>,
     ) -> Result<()> {
-        sender.send(Message::Key("loading...".into()))?;
-
+        let total = 3;
         let input = name.into();
         let (filters, name) = Self::parse_name(&input).map_err(|_| anyhow!("parse name failed"))?;
 
         let base_url = base_url.into();
         let name = name.trim();
 
-        for i in 0..3 {
+        for i in 0..total {
+            sender.send(Message::Key(format!("[{}/{}]loading...", i + 1, total)))?;
+
             let books =
                 Self::parse_books(client.clone(), format!("{}/page/{}", base_url, i), name)?;
             if books.is_empty() {
@@ -190,10 +199,77 @@ impl Backend {
 
         Ok(())
     }
-}
 
-impl Drop for Backend {
-    fn drop(&mut self) {
-        self.threadpool.join();
+    pub fn kegel(&self) {
+        let sender = self.sender.clone();
+        self.threadpool.execute(move || {
+            if let Err(e) = Self::start_kegel(sender.clone()) {
+                if let Err(e) = sender.send(Message::Key(e.to_string())) {
+                    eprintln!("{:?}", e);
+                }
+            }
+        })
+    }
+
+    fn start_kegel(sender: Sender<Message>) -> Result<()> {
+        let total_item = 10;
+        let total_group = 5;
+        for group in 0..total_group {
+            for item in 0..total_item {
+                Self::kegel_time_relax(&sender, 5, item + 1, total_item, group + 1, total_group)?;
+                Self::kegel_time_process(
+                    &sender,
+                    10,
+                    item + 1,
+                    total_item,
+                    group + 1,
+                    total_group,
+                )?;
+            }
+            Self::kegel_time_relax(&sender, 20, 1, total_item, group + 1, total_group)?;
+        }
+        sender.send(Message::Kegel(KegelState::End))?;
+
+        Ok(())
+    }
+
+    fn kegel_time_process(
+        sender: &Sender<Message>,
+        time: i32,
+        current_item: i32,
+        total_item: i32,
+        current_group: i32,
+        total_group: i32,
+    ) -> Result<()> {
+        for s in 0..time {
+            sender.send(Message::Kegel(KegelState::Process(
+                (s + 1, time),
+                (current_item, total_item),
+                (current_group, total_group),
+            )))?;
+            sleep(Duration::from_secs(1));
+        }
+
+        Ok(())
+    }
+
+    fn kegel_time_relax(
+        sender: &Sender<Message>,
+        time: i32,
+        current_item: i32,
+        total_item: i32,
+        current_group: i32,
+        total_group: i32,
+    ) -> Result<()> {
+        for s in 0..time {
+            sender.send(Message::Kegel(KegelState::Relax(
+                (s + 1, time),
+                (current_item, total_item),
+                (current_group, total_group),
+            )))?;
+            sleep(Duration::from_secs(1));
+        }
+
+        Ok(())
     }
 }
