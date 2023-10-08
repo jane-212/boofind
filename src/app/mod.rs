@@ -171,6 +171,7 @@ impl<'a> App<'a> {
                     Constraint::Length(1),
                     Constraint::Min(0),
                     Constraint::Length(1),
+                    Constraint::Length(1),
                 ])
                 .split(frame.size());
 
