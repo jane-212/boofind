@@ -226,7 +226,9 @@ impl Backend {
                     total_group,
                 )?;
             }
-            Self::kegel_time_relax(&sender, 20, 1, total_item, group + 1, total_group)?;
+            if group != total_group - 1 {
+                Self::kegel_time_relax(&sender, 20, 1, total_item, group + 1, total_group)?;
+            }
         }
         sender.send(Message::Kegel(KegelState::End))?;
 
