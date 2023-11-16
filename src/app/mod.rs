@@ -3,11 +3,10 @@ use std::sync::mpsc::{channel, Receiver};
 use anyhow::{Context, Result};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Style};
 use tui_textarea::{Input, Key};
 
-use crate::backend::{Backend, KegelState, Message};
-use crate::layout::{books, footer, title};
+use crate::backend::{Backend, Message};
+use crate::layout::{books, title};
 use crate::term::Term;
 pub use state::{Book, Mode, State};
 
@@ -65,9 +64,6 @@ impl<'a> App<'a> {
                 Message::Key(key) => {
                     self.state.set_key(&key);
                 }
-                Message::Kegel(kegel) => {
-                    self.state.set_kegel(kegel);
-                }
             }
         }
     }
@@ -86,15 +82,6 @@ impl<'a> App<'a> {
                         modifiers: KeyModifiers::NONE,
                         ..
                     }) => self.should_quit = true,
-                    Event::Key(KeyEvent {
-                        code: KeyCode::Char('g'),
-                        modifiers: KeyModifiers::NONE,
-                        ..
-                    }) => {
-                        if KegelState::End == *self.state.kegel() {
-                            self.backend.kegel();
-                        }
-                    }
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('j'),
                         modifiers: KeyModifiers::NONE,
@@ -170,8 +157,6 @@ impl<'a> App<'a> {
                     Constraint::Length(3),
                     Constraint::Length(1),
                     Constraint::Min(0),
-                    Constraint::Length(1),
-                    Constraint::Length(1),
                 ])
                 .split(frame.size());
 
@@ -181,19 +166,8 @@ impl<'a> App<'a> {
             let title = title::Title::new(&self.state);
             frame.render_widget(title, area[1]);
 
-            let hint = match self.state.kegel() {
-                KegelState::Process(_, _, _) => Some(Color::Red),
-                KegelState::Relax(_, _, _) => Some(Color::Green),
-                KegelState::End => None,
-            };
-            let mut books = books::Books::new(&self.state).widget();
-            if let Some(color) = hint {
-                books = books.style(Style::new().fg(color).bg(color));
-            }
+            let books = books::Books::new(&self.state).widget();
             frame.render_stateful_widget(books, area[2], &mut self.state.selected_book());
-
-            let footer = footer::Footer::new(&self.state);
-            frame.render_widget(footer, area[3]);
         })?;
 
         Ok(())

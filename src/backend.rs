@@ -1,5 +1,5 @@
 use std::sync::mpsc::Sender;
-use std::thread::{sleep, spawn};
+use std::thread::spawn;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -20,14 +20,6 @@ pub enum Message {
     Book(Vec<Book>),
     More(Vec<Book>),
     Key(String),
-    Kegel(KegelState),
-}
-
-#[derive(PartialEq, Eq)]
-pub enum KegelState {
-    Process((i32, i32), (i32, i32), (i32, i32)),
-    Relax((i32, i32), (i32, i32), (i32, i32)),
-    End,
 }
 
 pub struct Backend {
@@ -196,81 +188,6 @@ impl Backend {
         }
 
         sender.send(Message::Key(name.into()))?;
-
-        Ok(())
-    }
-
-    pub fn kegel(&self) {
-        let sender = self.sender.clone();
-        self.threadpool.execute(move || {
-            if let Err(e) = Self::start_kegel(sender.clone()) {
-                if let Err(e) = sender.send(Message::Key(e.to_string())) {
-                    eprintln!("{:?}", e);
-                }
-            }
-        })
-    }
-
-    fn start_kegel(sender: Sender<Message>) -> Result<()> {
-        let total_item = 10;
-        let total_group = 5;
-        for group in 0..total_group {
-            for item in 0..total_item {
-                Self::kegel_time_relax(&sender, 5, item + 1, total_item, group + 1, total_group)?;
-                Self::kegel_time_process(
-                    &sender,
-                    10,
-                    item + 1,
-                    total_item,
-                    group + 1,
-                    total_group,
-                )?;
-            }
-            if group != total_group - 1 {
-                Self::kegel_time_relax(&sender, 20, 1, total_item, group + 1, total_group)?;
-            }
-        }
-        sender.send(Message::Kegel(KegelState::End))?;
-
-        Ok(())
-    }
-
-    fn kegel_time_process(
-        sender: &Sender<Message>,
-        time: i32,
-        current_item: i32,
-        total_item: i32,
-        current_group: i32,
-        total_group: i32,
-    ) -> Result<()> {
-        for s in 0..time {
-            sender.send(Message::Kegel(KegelState::Process(
-                (s + 1, time),
-                (current_item, total_item),
-                (current_group, total_group),
-            )))?;
-            sleep(Duration::from_secs(1));
-        }
-
-        Ok(())
-    }
-
-    fn kegel_time_relax(
-        sender: &Sender<Message>,
-        time: i32,
-        current_item: i32,
-        total_item: i32,
-        current_group: i32,
-        total_group: i32,
-    ) -> Result<()> {
-        for s in 0..time {
-            sender.send(Message::Kegel(KegelState::Relax(
-                (s + 1, time),
-                (current_item, total_item),
-                (current_group, total_group),
-            )))?;
-            sleep(Duration::from_secs(1));
-        }
 
         Ok(())
     }
